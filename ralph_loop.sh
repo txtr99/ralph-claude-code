@@ -28,6 +28,24 @@ USE_TMUX=false
 
 # Exit detection configuration
 EXIT_SIGNALS_FILE=".exit_signals"
+
+# Cross-platform date helpers (macOS uses BSD date, Linux uses GNU date)
+get_iso_timestamp() {
+    if [[ "$(uname)" == "Darwin" ]]; then
+        date '+%Y-%m-%dT%H:%M:%S%z'
+    else
+        date -Iseconds
+    fi
+}
+
+get_next_hour_time() {
+    if [[ "$(uname)" == "Darwin" ]]; then
+        date -v+1H '+%H:%M:%S'
+    else
+        date -d '+1 hour' '+%H:%M:%S'
+    fi
+}
+
 MAX_CONSECUTIVE_TEST_LOOPS=3
 MAX_CONSECUTIVE_DONE_SIGNALS=2
 TEST_PERCENTAGE_THRESHOLD=30  # If more than 30% of recent loops are test-only, flag it
@@ -168,14 +186,14 @@ update_status() {
     
     cat > "$STATUS_FILE" << STATUSEOF
 {
-    "timestamp": "$(date -Iseconds)",
+    "timestamp": "$(get_iso_timestamp)",
     "loop_count": $loop_count,
     "calls_made_this_hour": $calls_made,
     "max_calls_per_hour": $MAX_CALLS_PER_HOUR,
     "last_action": "$last_action",
     "status": "$status",
     "exit_reason": "$exit_reason",
-    "next_reset": "$(date -d '+1 hour' -Iseconds | cut -d'T' -f2 | cut -d'+' -f1)"
+    "next_reset": "$(get_next_hour_time)"
 }
 STATUSEOF
 }

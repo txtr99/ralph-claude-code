@@ -36,3 +36,7 @@ target/
 .idea/
 *.swp
 *.swo
+
+
+.cursor/rules/kluster-code-verify.mdc
+.kluster
