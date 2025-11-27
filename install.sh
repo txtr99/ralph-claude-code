@@ -71,20 +71,25 @@ check_dependencies() {
 # Create installation directory
 create_install_dirs() {
     log "INFO" "Creating installation directories..."
-    
+
     mkdir -p "$INSTALL_DIR"
     mkdir -p "$RALPH_HOME"
     mkdir -p "$RALPH_HOME/templates"
-    
+    mkdir -p "$RALPH_HOME/lib"
+
     log "SUCCESS" "Directories created: $INSTALL_DIR, $RALPH_HOME"
 }
 
 # Install Ralph scripts
 install_scripts() {
     log "INFO" "Installing Ralph scripts..."
-    
+
     # Copy templates to Ralph home
     cp -r "$SCRIPT_DIR/templates/"* "$RALPH_HOME/templates/"
+
+    # Copy lib directory (required by ralph_loop.sh)
+    cp -r "$SCRIPT_DIR/lib/"* "$RALPH_HOME/lib/"
+    chmod +x "$RALPH_HOME/lib/"*.sh
     
     # Create the main ralph command
     cat > "$INSTALL_DIR/ralph" << 'EOF'

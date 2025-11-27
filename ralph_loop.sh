@@ -17,6 +17,7 @@ DOCS_DIR="docs/generated"
 STATUS_FILE="status.json"
 PROGRESS_FILE="progress.json"
 CLAUDE_CODE_CMD="claude"
+CLAUDE_CODE_CMD_OVERRIDE=""  # Optional override for implementation loops
 MAX_CALLS_PER_HOUR=100  # Adjust based on your plan
 VERBOSE_PROGRESS=false  # Default: no verbose progress updates
 CLAUDE_TIMEOUT_MINUTES=15  # Default: 15 minutes timeout for Claude Code execution
@@ -87,6 +88,9 @@ setup_tmux_session() {
     fi
     if [[ "$PROMPT_FILE" != "PROMPT.md" ]]; then
         ralph_cmd="$ralph_cmd --prompt '$PROMPT_FILE'"
+    fi
+    if [[ -n "$CLAUDE_CODE_CMD_OVERRIDE" ]]; then
+        ralph_cmd="$ralph_cmd --cmd '$CLAUDE_CODE_CMD_OVERRIDE'"
     fi
     
     tmux send-keys -t "$session_name:0.0" "$ralph_cmd" Enter
@@ -310,12 +314,15 @@ execute_claude_code() {
     local calls_made=$(cat "$CALL_COUNT_FILE" 2>/dev/null || echo "0")
     calls_made=$((calls_made + 1))
     
+    # Use override command if specified, otherwise default
+    local exec_cmd="${CLAUDE_CODE_CMD_OVERRIDE:-$CLAUDE_CODE_CMD}"
+
     log_status "LOOP" "Executing Claude Code (Call $calls_made/$MAX_CALLS_PER_HOUR)"
     local timeout_seconds=$((CLAUDE_TIMEOUT_MINUTES * 60))
-    log_status "INFO" "⏳ Starting Claude Code execution... (timeout: ${CLAUDE_TIMEOUT_MINUTES}m)"
-    
+    log_status "INFO" "⏳ Starting execution with '$exec_cmd'... (timeout: ${CLAUDE_TIMEOUT_MINUTES}m)"
+
     # Execute Claude Code with the prompt, streaming output
-    if timeout ${timeout_seconds}s $CLAUDE_CODE_CMD < "$PROMPT_FILE" > "$output_file" 2>&1 & 
+    if timeout ${timeout_seconds}s $exec_cmd < "$PROMPT_FILE" > "$output_file" 2>&1 & 
     then
         local claude_pid=$!
         local progress_counter=0
@@ -574,7 +581,7 @@ show_help() {
     cat << HELPEOF
 Ralph Loop for Claude Code
 
-Usage: $0 [OPTIONS]
+Usage: ralph [OPTIONS]
 
 IMPORTANT: This command must be run from a Ralph project directory.
            Use 'ralph-setup project-name' to create a new project first.
@@ -587,6 +594,7 @@ Options:
     -m, --monitor           Start with tmux session and live monitor (requires tmux)
     -v, --verbose           Show detailed progress updates during execution
     -t, --timeout MIN       Set Claude Code execution timeout in minutes (default: $CLAUDE_TIMEOUT_MINUTES)
+    --cmd COMMAND           Use alternate command for implementation loops (e.g., 'glm')
     --reset-circuit         Reset circuit breaker to CLOSED state
     --circuit-status        Show circuit breaker status and exit
 
@@ -597,14 +605,15 @@ Files created:
 
 Example workflow:
     ralph-setup my-project     # Create project
-    cd my-project             # Enter project directory  
-    $0 --monitor             # Start Ralph with monitoring
+    cd my-project             # Enter project directory
+    ralph --monitor           # Start Ralph with monitoring
 
 Examples:
-    $0 --calls 50 --prompt my_prompt.md
-    $0 --monitor             # Start with integrated tmux monitoring
-    $0 --monitor --timeout 30   # 30-minute timeout for complex tasks
-    $0 --verbose --timeout 5    # 5-minute timeout with detailed progress
+    ralph --calls 50 --prompt my_prompt.md
+    ralph --monitor             # Start with integrated tmux monitoring
+    ralph --monitor --timeout 30   # 30-minute timeout for complex tasks
+    ralph --verbose --timeout 5    # 5-minute timeout with detailed progress
+    ralph --cmd glm --monitor   # Use 'glm' alias for implementation loops
 
 HELPEOF
 }
@@ -648,6 +657,30 @@ while [[ $# -gt 0 ]]; do
                 echo "Error: Timeout must be a positive integer between 1 and 120 minutes"
                 exit 1
             fi
+            shift 2
+            ;;
+        --cmd)
+            # Validate: must be a single word (no spaces, semicolons, pipes, etc.)
+            if [[ "$2" =~ [[:space:]\;\|\&\$\`\(\)\{\}\<\>] ]]; then
+                echo "Error: --cmd must be a single command name (no spaces or shell metacharacters)"
+                echo "Example: --cmd glm"
+                exit 1
+            fi
+            # Check if command exists (warn if not, but allow - may be a wrapper script)
+            if ! command -v "$2" &> /dev/null; then
+                echo "Warning: Command '$2' not found in PATH"
+                echo "Note: Shell aliases don't work in scripts. Create a wrapper script instead:"
+                echo "  echo '#!/bin/bash' > ~/.local/bin/$2"
+                echo "  echo 'exec YOUR_COMMAND_HERE \"\$@\"' >> ~/.local/bin/$2"
+                echo "  chmod +x ~/.local/bin/$2"
+                echo ""
+                read -p "Continue anyway? [y/N] " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    exit 1
+                fi
+            fi
+            CLAUDE_CODE_CMD_OVERRIDE="$2"
             shift 2
             ;;
         --reset-circuit)
